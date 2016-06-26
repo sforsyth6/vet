@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+hello
 
 """Analyse a veto definer file in full using the GWpy VET package
 """
