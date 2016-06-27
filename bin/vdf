@@ -46,11 +46,15 @@ ConfigParser._dict = OrderedDict
 
 parser = ArgumentParser(description=__doc__)
 
-parser.add_argument('veto-definer-file', help='path to veto definer file')
-parser.add_argument('gps-start-time', type=to_gps, help='GPS start time/date of analysis')
-parser.add_argument('gps-end-time', type=to_gps, help='GPS end time/date of analysis')
+parser.add_argument('veto-definer-file', 
+                        help='path to veto definer file')
+parser.add_argument('gps-start-time', type=to_gps, 
+                        help='GPS start time/date of analysis')
+parser.add_argument('gps-end-time', type=to_gps, 
+                        help='GPS end time/date of analysis')
 analargs = parser.add_argument_group('Analysis options')
-analargs.add_argument('-m', '--metric', action='append', help='name of metric to use in analysis, '
+analargs.add_argument('-m', '--metric', action='append', 
+                        help='name of metric to use in analysis, '
                           'can be given multiple times, default: %s'
                            % DEFAULT_METRICS)
 analargs.add_argument('-o', '--output-directory', default=os.curdir,
@@ -81,7 +85,6 @@ duration = int(ceil(end) - floor(start))
 #
 # -----------------------------------------------------------------------------
 
-                                                                                                                                                                                                                                                                                                                                                        59,1          Top
 tag = '%d-%d' % (start.seconds, end.seconds)
 outdir = os.path.abspath(os.path.join(args.output_directory, tag))
 mkdir(outdir)
@@ -107,7 +110,6 @@ def vdf():
         vdf = DataQualityDict.from_veto_definer_file(vetofile, start=start, end=end,
                 ifo=ifo, format ='ligolw')                                                #Changed IFO to None to read both L1 and H1 vdf's
 
-
         print('Read %d flags from veto definer' % len(vdf.keys()))
 
         # populate veto definer file from database
@@ -116,7 +118,6 @@ def vdf():
         os.chdir(outdir)
         return vdf
 #-----------------End Duncan's code----------------------------------------------------------
-
 
 '''
 The goal of this section is to extract all the known flags from the database for a specified time, then extract the flags used by the vdf for that same time period 
@@ -127,7 +128,6 @@ The analysis is then run on the remaining flags
 #import known flags from database
 knownFlags = get_known_flags(start,end,url=args.segdb, ifo=ifo, badonly=None)
 vdf = vdf()
-
 
 #create a dictionary and lists to identify the categories associated with each flag
 cat = dict()
