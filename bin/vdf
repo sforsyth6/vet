@@ -34,8 +34,7 @@ from gwsumm.state import SummaryState
 from gwsumm.utils import (re_cchar, mkdir, get_default_ifo)
 
 
-DEFAULT_METRICS = ['Deadtime', 'Efficiency', 'Efficiency/Deadtime',
-                   'Use percentage', 'Loudest event by SNR']
+DEFAULT_METRICS = ['Deadtime', 'Efficiency', 'Efficiency/Deadtime', 'Use percentage', 'Loudest event by SNR']
 
 ConfigParser._dict = OrderedDict
 
@@ -48,28 +47,20 @@ ConfigParser._dict = OrderedDict
 parser = ArgumentParser(description=__doc__)
 
 parser.add_argument('veto-definer-file', help='path to veto definer file')
-parser.add_argument('gps-start-time', type=to_gps,
-                    help='GPS start time/date of analysis')
-parser.add_argument('gps-end-time', type=to_gps,
-                    help='GPS end time/date of analysis')
-
+parser.add_argument('gps-start-time', type=to_gps, help='GPS start time/date of analysis')
+parser.add_argument('gps-end-time', type=to_gps, help='GPS end time/date of analysis')
 analargs = parser.add_argument_group('Analysis options')
-analargs.add_argument('-m', '--metric', action='append',
-                      help='name of metric to use in analysis, '
-                           'can be given multiple times, default: %s'
+analargs.add_argument('-m', '--metric', action='append', help='name of metric to use in analysis, '
+                          'can be given multiple times, default: %s'
                            % DEFAULT_METRICS)
-
 analargs.add_argument('-o', '--output-directory', default=os.curdir,
                       type=os.path.abspath,
                       help='output directory path, default: %(default)s, '
                            'this path should be web-viewable')
-
 segargs = parser.add_argument_group('Segment options')
-
 segargs.add_argument('-t', '--segment-url', dest='segdb',
                      default='https://segments.ligo.org',
                      help='url of segment database, default: %(default)s')
-
 segargs.add_argument('-S', '--on-segdb-error', default='raise',
                      choices=['raise', 'ignore', 'warn'],
                      help='how to handle (dq)segdb errors, '
