@@ -8,6 +8,7 @@ import os
 import sys
 import re
 
+from numpy import savetxt
 from gwpy.segments import flag
 from gwvet.segments import get_known_flags
 
