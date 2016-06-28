@@ -1,3 +1,204 @@
+#!/usr/bin/env python
+
+"""Analyse a veto definer file in full using the GWpy VET package"""
+
+from __future__ import print_function
+
+import os
+import sys
+import re
+
+from gwpy.segments import flag
+from gwvet.segments import get_known_flags
+
+from math import (ceil, floor)
+from urlparse import urlparse
+from urllib2 import urlopen
+from argparse import ArgumentParser
+from getpass import getuser
+from subprocess import (Popen, PIPE, CalledProcessError)
+try:
+    from configparser import (ConfigParser, NoSectionError)
+except ImportError:
+    from ConfigParser import (ConfigParser, NoSectionError)
+try:
+    from collections import OrderedDict
+except ImportError:
+    from ordereddict import OrderedDict
+
+from gwpy.time import to_gps
+from gwpy.segments import (Segment, SegmentList,
+                           DataQualityFlag, DataQualityDict)
+
+from gwsumm.state import SummaryState
+from gwsumm.utils import (re_cchar, mkdir, get_default_ifo)
+
+
+DEFAULT_METRICS = ['Deadtime', 'Efficiency', 'Efficiency/Deadtime', 'Use percentage', 'Loudest event by SNR']
+
+ConfigParser._dict = OrderedDict
+
+# -----------------------------------------------------------------------------
+#
+# set up command line and parse
+#
+# -----------------------------------------------------------------------------
+
+parser = ArgumentParser(description=__doc__)
+
+parser.add_argument('veto-definer-file', 
+                        help='path to veto definer file')
+parser.add_argument('gps-start-time', type=to_gps, 
+                        help='GPS start time/date of analysis')
+parser.add_argument('gps-end-time', type=to_gps, 
+                        help='GPS end time/date of analysis')
+analargs = parser.add_argument_group('Analysis options')
+analargs.add_argument('-m', '--metric', action='append', 
+                        help='name of metric to use in analysis, '
+                          'can be given multiple times, default: %s'
+                           % DEFAULT_METRICS)
+analargs.add_argument('-o', '--output-directory', default=os.curdir,
+                      type=os.path.abspath,
+                      help='output directory path, default: %(default)s, '
+                           'this path should be web-viewable')
+segargs = parser.add_argument_group('Segment options')
+segargs.add_argument('-t', '--segment-url', dest='segdb',
+                     default='https://segments.ligo.org',
+                     help='url of segment database, default: %(default)s')
+segargs.add_argument('-S', '--on-segdb-error', default='raise',
+                     choices=['raise', 'ignore', 'warn'],
+                     help='how to handle (dq)segdb errors, '
+                          'default: %(default)s')
+
+#-------------------Vdf generator pulled from duncan's code--------------------------------
+
+args = parser.parse_args()
+ifo =None
+start = getattr(args, 'gps-start-time')
+end = getattr(args, 'gps-end-time')
+span = Segment(start, end)
+duration = int(ceil(end) - floor(start))
+
+# -----------------------------------------------------------------------------
+#
+# set things up
+#
+# -----------------------------------------------------------------------------
+
+tag = '%d-%d' % (start.seconds, end.seconds)
+outdir = os.path.abspath(os.path.join(args.output_directory, tag))
+mkdir(outdir)
+os.chdir(outdir)
+mkdir('etc', 'segments', 'condor')
+
+def vdf():
+        os.chdir('segments')
+        vetofile = getattr(args, 'veto-definer-file')
+        if not urlparse(vetofile).netloc:
+            vetofile = os.path.abspath(vetofile)
+        if not args.metric:
+            args.metric = DEFAULT_METRICS
+
+        # -- read veto definer and process --------------
+        if urlparse(vetofile).netloc:
+            tmp = urlopen(vetofile)
+            vetofile = os.path.abspath(os.path.basename(vetofile))
+            with open(vetofile, 'w') as f:
+                f.write(tmp.read())
+            print('Downloaded veto definer file')
+
+        vdf = DataQualityDict.from_veto_definer_file(vetofile, start=start, end=end,
+                ifo=ifo, format ='ligolw')                                                #Changed IFO to None to read both L1 and H1 vdf's
+
+        print('Read %d flags from veto definer' % len(vdf.keys()))
+
+        # populate veto definer file from database
+        vdf.populate(source=args.segdb, on_error=args.on_segdb_error)
+
+        os.chdir(outdir)
+        return vdf
+#-----------------End Duncan's code----------------------------------------------------------
+
+'''
+The goal of this section is to extract all the known flags from the database for a specified time, then extract the flags used by the vdf for that same time period 
+We then compare the two sets of flags and subtract out the vdf flags from the database flags
+The analysis is then run on the remaining flags
+'''
+
+#import known flags from database
+knownFlags = get_known_flags(start,end,url=args.segdb, ifo=ifo, badonly=None)
+vdf = vdf()
+
+#create a dictionary and lists to identify the categories associated with each flag
+cat = dict()
+cat1 = []
+cat2 = []
+cat3 = []
+cat4 = []
+
+#split the flags into lists associated with their categories and then add them to the dicitonary
+for i in range(len(vdf)):
+        flag = vdf.keys()[i]
+        categ = vdf['%s' %flag].category
+        if len(vdf[flag].active) != 0:
+                if categ == 1:
+                        cat1.append(flag)
+                elif categ == 2:
+                        cat2.append(flag)
+                elif categ == 3:
+                        cat3.append(flag)
+                elif categ == 4:
+                        cat4.append(flag)
+cat[1] = cat1
+cat[2] = cat2
+cat[3] = cat3
+cat[4] = cat4
+
+#Populate a DataQualityDict() with the knownFlags, making sure to filter out the non-active flags
+segments = dict()
+
+for flag in range(len(knownFlags)):
+        query = DataQualityFlag.query(knownFlags[flag],start,end,url=args.segdb)
+        if len(query.active) != 0:
+                segments[knownFlags[flag]] = query
+
+knownFlags = segments.keys()
+
+
+#remove the flags assoicated with the vdf from the knownFlags in an order dependent on the categories
+#kf[1] = knownFlags - cat1     kf[2] = knownFlags - cat1,4     kf[3] = knwonFlags - cat1,2,4    kf[4] = knwonFlags - cat1,2,3,4
+
+kf = dict()
+
+for categ in range(1,5):
+        if categ == 1:
+                known = knownFlags[:]
+                knownCat = categ
+        else:
+                knownCat = categ-1
+                known = kf[knownCat][:]
+
+                if categ == 2:
+                        knownCat = 4
+
+        i = len(known) - 1
+        category = cat[knownCat]
+
+        while i >= 0:
+                if known[i] in category:
+                        known.pop(i)
+                i-=1
+        kf[categ] = known
+
+#assign the flags remaining that have been categorized in the specific way into a dictionary for wasy access
+dqFlags = dict()
+
+for cat in range(1,5):
+    segs = DataQualityDict()
+    for i in range(len(kf[cat])):
+        if kf[cat][i] in segments.keys():
+            segs[kf[cat][i]] = segments[kf[cat][i]]
+    dqFlags[cat] = segs
 
 
 for i in range(1,5):
